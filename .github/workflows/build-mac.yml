@@ -1,0 +1,102 @@
+# Builds the Mac app on GitHub's own Mac.
+# - on every push, by hand (Actions tab → build-mac → Run workflow), and once a day
+# - the Web screen inside the app is always the newest one on the YDA site (tools/fetch_screen.py)
+# - the daily run only builds when the YDA site has a newer screen than the last release
+# - every build is published as a Release:  Releases → latest → YdaFacet01-mac.zip
+name: build-mac
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 19 * * *"   # every day 04:17 in Tokyo
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      screen: ${{ steps.s.outputs.screen }}
+      app: ${{ steps.s.outputs.app }}
+      build: ${{ steps.s.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: s
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SCREEN=$(python3 tools/fetch_screen.py)
+          APP=$(sed -n 's/^project(YdaFacet VERSION \([0-9.]*\)).*/\1/p' CMakeLists.txt)
+          TAG="app-$APP-screen-$SCREEN"
+          echo "screen=$SCREEN" >> $GITHUB_OUTPUT
+          echo "app=$APP" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" = "schedule" ] && gh release view "$TAG" >/dev/null 2>&1; then
+            echo "build=false" >> $GITHUB_OUTPUT; echo "already built: $TAG"
+          else
+            echo "build=true" >> $GITHUB_OUTPUT; echo "will build: $TAG"
+          fi
+
+  mac:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Newest Web screen from the YDA site
+        run: python3 tools/fetch_screen.py
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: build/_deps
+          key: juce-9.0.6-${{ runner.os }}
+
+      - name: Configure
+        run: cmake -B build -G Xcode
+
+      - name: Build
+        run: cmake --build build --config Release --target YdaFacet -- -quiet
+
+      - name: Check both Mac types are inside (Intel + Apple Silicon)
+        run: |
+          APP=$(find build -name "Yda Facet 01.app" -type d -path "*Release*" | head -1)
+          echo "APP=$APP" >> $GITHUB_ENV
+          lipo -info "$APP/Contents/MacOS/Yda Facet 01"
+          grep -o 'facet-version" content="[0-9.]*' "$APP/Contents/Resources/facet.html"
+
+      - name: Sign for local use (no Apple account yet)
+        run: codesign --force --deep --sign - "$APP"
+
+      - name: Self-test (opens the app, saves a 5 MB file through the bridge)
+        continue-on-error: true
+        run: |
+          D="$HOME/Library/Application Support/Yda Facet"
+          rm -f "$D/selftest.bin"
+          FACET_SELFTEST=1 FACET_NO_UPDATE=1 "$APP/Contents/MacOS/Yda Facet 01" & PID=$!
+          for i in $(seq 1 90); do [ -f "$D/selftest.bin" ] && break; sleep 1; done
+          kill $PID 2>/dev/null || true
+          cat "$D/boot.txt" || echo "no boot.txt"
+          ls -la "$D/selftest.bin"
+
+      - name: Zip
+        run: ditto -c -k --keepParent "$APP" "YdaFacet01-mac.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YdaFacet01-mac
+          path: YdaFacet01-mac.zip
+          retention-days: 30
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="app-${{ needs.check.outputs.app }}-screen-${{ needs.check.outputs.screen }}"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" YdaFacet01-mac.zip --latest \
+            --title "Yda Facet 01 — app ${{ needs.check.outputs.app }} / screen v${{ needs.check.outputs.screen }}" \
+            --notes "Mac app (Intel + Apple Silicon, macOS 11+). Web screen v${{ needs.check.outputs.screen }} inside; the app also updates the screen by itself."
