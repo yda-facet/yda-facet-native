@@ -55,6 +55,14 @@ jobs:
           path: build/_deps
           key: juce-9.0.6-${{ runner.os }}
 
+      - name: App icon (Resources/icon.svg drawn by the Mac's Chrome)
+        continue-on-error: true
+        run: |
+          "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars \
+            --default-background-color=00000000 --window-size=1024,1024 \
+            --screenshot="$PWD/Resources/icon.png" "file://$PWD/Resources/icon.svg"
+          ls -la Resources
+
       - name: Configure
         run: cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
@@ -81,6 +89,7 @@ jobs:
           for i in $(seq 1 90); do [ -f "$D/selftest.bin" ] && break; sleep 1; done
           kill $PID 2>/dev/null || true
           cat "$D/boot.txt" || echo "no boot.txt"
+          ls "$D/snapshots" || true
           ls -la "$D/selftest.bin"
 
       - name: Zip
