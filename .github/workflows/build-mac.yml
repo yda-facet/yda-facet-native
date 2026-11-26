@@ -41,7 +41,7 @@ jobs:
   mac:
     needs: check
     if: needs.check.outputs.build == 'true'
-    runs-on: macos-15
+    runs-on: macos-15-intel   # Intel Mac runner (Apple Silicon runners were not available); still builds for both
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
