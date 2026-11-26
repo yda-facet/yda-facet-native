@@ -1,11 +1,12 @@
 cmake_minimum_required(VERSION 3.22)
 
 # Yda Facet 01 — native shell. Version of the app wrapper (separate from the Web screen's version).
-project(YdaFacet VERSION 0.2.0)
 
-# Build for both Apple Silicon and Intel Macs, and keep older macOS working.
+# Build for both Apple Silicon and Intel Macs, and keep older macOS working (must come before project()).
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
+
+project(YdaFacet VERSION 0.3.0)
 
 include(FetchContent)
 FetchContent_Declare(JUCE
@@ -21,7 +22,13 @@ else()
     set(FACET_NEEDS_CURL TRUE)
 endif()
 
+# App icon: Resources/icon.png is drawn from Resources/icon.svg by the build (see the workflow)
+if(EXISTS "${CMAKE_SOURCE_DIR}/Resources/icon.png")
+    set(FACET_ICON ICON_BIG "${CMAKE_SOURCE_DIR}/Resources/icon.png")
+endif()
+
 juce_add_gui_app(YdaFacet
+    ${FACET_ICON}
     PRODUCT_NAME "Yda Facet 01"
     COMPANY_NAME "Yda"
     BUNDLE_ID "com.yda.facet01"
@@ -33,6 +40,9 @@ juce_add_gui_app(YdaFacet
 juce_generate_juce_header(YdaFacet)
 
 target_sources(YdaFacet PRIVATE Source/Main.cpp)
+if(APPLE)
+    target_sources(YdaFacet PRIVATE Source/MacBits.mm)   # alert / confirm / prompt as Mac dialogs
+endif()
 
 target_compile_definitions(YdaFacet PRIVATE
     JUCE_WEB_BROWSER=1
