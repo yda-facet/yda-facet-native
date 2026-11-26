@@ -56,7 +56,7 @@ jobs:
           key: juce-9.0.6-${{ runner.os }}
 
       - name: Configure
-        run: cmake -B build -G Xcode
+        run: cmake -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
       - name: Build
         run: cmake --build build --config Release --target YdaFacet -- -quiet
@@ -66,6 +66,7 @@ jobs:
           APP=$(find build -name "Yda Facet 01.app" -type d -path "*Release*" | head -1)
           echo "APP=$APP" >> $GITHUB_ENV
           lipo -info "$APP/Contents/MacOS/Yda Facet 01"
+          lipo "$APP/Contents/MacOS/Yda Facet 01" -verify_arch x86_64 arm64
           grep -o 'facet-version" content="[0-9.]*' "$APP/Contents/Resources/facet.html"
 
       - name: Sign for local use (no Apple account yet)
